@@ -1,0 +1,126 @@
+with 
+    SEAT_NUMBERS  as (
+    -- number of seats per aircraft 
+                            select 
+                                s.aircraft_code,
+                                count (s.seat_no) seat_capacity
+                            from
+                                dst_project.seats s
+                            group by
+                                s.aircraft_code
+                            ),
+    FLIGHTS_REVENUES as (
+    -- total revenue per flight
+                        select
+                            tf.flight_id,
+                            sum(tf.amount) revenue
+                        from
+                            dst_project.ticket_flights as tf
+                        group by
+                            tf.flight_id
+                        ),
+                        
+    FUEL_CONSUMPTION as (
+    -- fuelconsumptioin per aircraft
+            select 'SU9'::text aircraft_code, '1.700'::float fuel_consumption
+            union 
+            select '733', '2.600'::float 
+
+                    ),
+                    
+    
+                        
+    FUEL_PRICE as (
+    -- fuel price 2017 in Anapa airport by months
+            select '1'::integer months, '38867'::integer price
+            union 
+            select '2', '41435'
+            union
+            select '3', '38831'
+            union
+            select '4', '38970'
+            union
+            select '5', '37705'
+            union
+            select '6', '37395'
+            union
+            select '7', '37860'
+            union
+            select '8', '41637'
+            union
+            select '9', '40732'
+            union
+            select '10', '42674'
+            union
+            select '11', '45510'
+            union
+            select '12', '47101'
+            ),
+            
+    FLIGHT_COSTS as (
+    -- time duration, fuel consumed, fuel costs per flight
+                       select
+                            fv.flight_id flight_id,
+                            date_part('hour', fv.actual_duration)+date_part('minute', fv.actual_duration)/60 duration,
+                            fc.fuel_consumption as fuel_consumption,
+                            fp.price price,
+                            fc.fuel_consumption*(date_part('hour', fv.actual_duration)+date_part('minute', fv.actual_duration)/60) fuel_consumed,
+                            fc.fuel_consumption*(date_part('hour', fv.actual_duration)+date_part('minute', fv.actual_duration)/60)*fp.price fuel_costs
+                        from 
+                            dst_project.flights_v fv
+                            join fuel_consumption fc on fc.aircraft_code=fv.aircraft_code
+                            join fuel_price as fp on date_part('month', fv.actual_departure)=fp.months
+                    )
+
+select
+    tf.flight_id,
+    f.flight_no,
+    f.aircraft_code aircraft,
+    f.actual_departure,
+    f.departure_airport departure_airport,
+    f.arrival_airport arrival_airport,
+    ns.seat_capacity seat_capacity,
+    count(tf.ticket_no) seats_taken,
+    count(tf.ticket_no) *100/ns.seat_capacity seat_utilization,
+    fr.revenue revenue,
+    c.duration duration,
+    c.fuel_consumption fuel_consumption,
+    c.fuel_consumed fuel_consumed,
+    c.price price,
+    c.fuel_costs fuel_costs,
+    fr.revenue-c.fuel_costs profit
+    
+from
+
+    dst_project.ticket_flights tf
+    join dst_project.flights f on tf.flight_id=f.flight_id
+    join dst_project.flights_v fv on fv.flight_id=f.flight_id
+    join SEAT_NUMBERS ns on ns.aircraft_code=f.aircraft_code 
+    join flights_revenues as fr on fr.flight_id=f.flight_id
+    join flight_costs c on c.flight_id=f.flight_id
+    /*
+    join flight_duration fd on f.flight_id=fd.flight_id
+    */
+
+WHERE f.departure_airport = 'AAQ'
+  AND (date_trunc('month', f.scheduled_departure) in ('2017-01-01', '2017-02-01', '2017-12-01'))
+  AND f.status not in ('Cancelled')
+group by
+    tf.flight_id,
+    f.flight_no,
+    f.aircraft_code,
+    ns.seat_capacity,
+    f.actual_departure,
+    f.departure_airport,
+    f.arrival_airport,
+    fr.revenue,
+    c.duration,
+    c.fuel_consumption,
+    c.fuel_consumed,
+    c.fuel_costs,
+    c.price
+   
+order by
+    f.flight_no,
+    profit desc
+   
